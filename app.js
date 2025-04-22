@@ -1,8 +1,12 @@
-let account = null;
+let state = Object.freeze({
+    account: null,
+}); // centralize all app data in a single state object
+
+const storageKey = 'savedAccount'; // user data will be saved until user explicitly log out
 
 const routes = {
     '/login': { templateId: 'login' },
-    '/dashboard': { templateId: 'dashboard' },
+    '/dashboard': { templateId: 'dashboard', init: refresh },
     '/credits': { templateId: 'credits' },
 }; 
 
@@ -10,7 +14,7 @@ function updateRoute() {
     const path = window.location.pathname;
     const route = routes[path];
     if (!route) {
-        return navigate('/login'); // redirect to login if the route is not found
+        return navigate('/dashboard'); // redirect to dashboard if the route is not found
     }
     const template = document.getElementById(route.templateId);
     const view = template.content.cloneNode(true);
@@ -48,7 +52,7 @@ async function register() {
     errorContainer.style.display = 'none'; // hide the error message
     console.log('Account created successfully!', result);
 
-    account = result;
+    updateState('account', result);
     navigate('/dashboard');
 }
 
@@ -74,8 +78,13 @@ async function login() {
         return updateElement('loginError', data.error);
     }
 
-    account = data;
+    updateState('account', data);
     navigate('/dashboard');
+}
+
+function logout() {
+    updateState('account', null);
+    navigate('/login');
 }
 
 async function getAccount(user) {
@@ -95,7 +104,7 @@ function updateElement(id, text) {
 
 function updateDashboard() {
     if (!account) {
-        return navigate('/login');
+        return logout();
     }
     updateElement('description', account.description);
     updateElement('balance', account.balance.toFixed(2));
@@ -119,6 +128,42 @@ function createTransactionRow(transaction) {
     return transactionRow;
 }
 
-updateRoute('login'); // load the login template by default
-window.onpopstate = () => updateRoute();
-updateRoute(); // load the current route
+/* 
+ * Create a new state object and copy data from the previous state, then override a particular property
+ * of the state object with the newData, and finally lock the object to prevent modifications using Object.freeze()
+ */
+function updateState(property, newData) {
+    state = Object.freeze({
+        ...state,
+        [property]: newData,
+    });
+    localStorage.setItem(storageKey, JSON.stringify(state.account));
+}
+
+async function updateAccountData() {
+    const account = state.account;
+    if (!account) {
+        return logout();
+    }
+    const data = await getAccount(account.user);
+    if (data.error) {
+        return logout();
+    }
+    updateState('account', data);
+}
+
+async function refresh() {
+    await updateAccountData();
+    updateDashboard();
+}
+
+function init() {
+    const savedAccount = localStorage.getItem(storageKey);
+    if (savedAccount) {
+        updateState('account', JSON.parse(savedAccount));
+    } 
+    window.onpopstate = () => updateRoute();
+    updateRoute(); // load the current route
+}
+
+init();
